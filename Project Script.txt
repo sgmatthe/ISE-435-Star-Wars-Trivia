@@ -1,0 +1,204 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Nov  9 17:06:57 2020
+
+@author: spenc
+"""
+#import libraries
+import csv
+import pandas as pd
+from datetime import datetime
+from datetime import date
+import matplotlib.pyplot as plt
+
+
+
+#function to count number of fingers shown
+def fingerCount(numFingers):
+    import cv2 as cv
+    import numpy as np
+    #choose image to analyze based on input
+    if numFingers=='2':
+        img_path = r"C:\Users\spenc\Documents\Python Scripts\Project\twofingers.jpg"
+    if numFingers=='1':
+        img_path = r"C:\Users\spenc\Documents\Python Scripts\Project\onefinger.jpg"
+    #store image for analysis
+    img = cv.imread(img_path)
+    
+    #convert to black and white 
+    hsvim = cv.cvtColor(img, cv.COLOR_BGR2HSV)
+    lower = np.array([0, 48, 80], dtype = "uint8")
+    upper = np.array([20, 255, 255], dtype = "uint8")
+    skinRegionHSV = cv.inRange(hsvim, lower, upper)
+    blurred = cv.blur(skinRegionHSV, (2,2))
+    ret,thresh = cv.threshold(blurred,0,255,cv.THRESH_BINARY)
+        
+
+    #draw contour of hand (blue line around all of hand and fingers)
+    contours, hierarchy = cv.findContours(thresh, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)[-2:]
+    contours = max(contours, key=lambda x: cv.contourArea(x))
+    cv.drawContours(img, [contours], -1, (255,255,0), 2)
+    
+    #draw convex hull (yellow polygon around hand)
+    #the hull contacts all of the finger tips
+    hull = cv.convexHull(contours)
+    cv.drawContours(img, [hull], -1, (0, 255, 255), 2)
+
+    #find defects from hull using cosine
+    #any deviation of the contour from the hull is considered a defect (low points between fingers)
+    hull = cv.convexHull(contours, returnPoints=False)
+    defects = cv.convexityDefects(contours, hull)
+    
+    #if defects are found: 
+    if defects is not None:
+        cnt = 0
+    #calculate angle between finger tips and defect point between fingers
+    #acute angles are counted as fingers
+    for i in range(defects.shape[0]): 
+      s, e, f, d = defects[i][0]
+      start = tuple(contours[s][0])
+      end = tuple(contours[e][0])
+      far = tuple(contours[f][0])
+      a = np.sqrt((end[0] - start[0]) ** 2 + (end[1] - start[1]) ** 2)
+      b = np.sqrt((far[0] - start[0]) ** 2 + (far[1] - start[1]) ** 2)
+      c = np.sqrt((end[0] - far[0]) ** 2 + (end[1] - far[1]) ** 2)
+      angle = np.arccos((b ** 2 + c ** 2 - a ** 2) / (2 * b * c))  #      cosine theorem
+      #count if angle is less than 90
+      if angle <= np.pi / 2:  # angle less than 90 degree, treat as fingers
+        cnt += 1
+        cv.circle(img, far, 4, [0, 0, 255], -1)
+    #add one to the count since there are only 4 defect points between 5 fingers
+    cnt = cnt+1
+    cv.putText(img, str(cnt), (0, 50), cv.FONT_HERSHEY_SIMPLEX,1, (255, 0, 0) , 2, cv.LINE_AA)
+    #show analysis of hand and return finger count
+    cv.imshow('final_result',img)
+    #show image analysis for 5 seconds
+    cv.waitKey(100000)
+    cv.destroyAllWindows()
+    #return T/F based on number of fingers
+    if cnt==1:
+        answer='T'
+    if cnt==2:
+        answer='F'
+    return answer
+
+
+
+
+
+
+#activate playAgain for loop
+playAgain='Yes'
+game='ON'
+
+#option to play game or view scores
+print('Welcome to Star Wars Trivia!!!')
+print("Would you like to play, view scores, or turn the game OFF?")
+print("Enter 'play', 'scores', or 'OFF' ")
+choice=input()
+
+#loop gives option to turn the game off
+while game=='ON':
+
+    #if user selected to view scores
+    while choice=='scores':
+        with open(r'C:\Users\spenc\Documents\Python Scripts\Project\scores.csv') as file:
+            scoreData=pd.read_csv(file,index_col=[0])
+            
+        #score option menu
+        print('Would you like to: ')
+        print('1. See all recorded scores')
+        print('2. See how many times each player has played')
+        print('3. See the highest scorer')
+        print('4. See the lowest scorer')
+        print("5. Plot a player's scores over time")
+        print('6. Go Play')
+        print('7. Turn OFF the game')
+        print('Select 1,2,3,4,5,6, or 7')
+        scoreChoice=input()
+        
+        #take user to play the game if 6 is selected
+        if scoreChoice=='6':
+            choice='play'
+        #turn game off
+        if scoreChoice=='7':
+            choice='OFF'
+        #print all scores
+        if scoreChoice=='1':
+            print(scoreData)
+        #show player count
+        if scoreChoice=='2':
+            playerCount=scoreData.groupby('User').count()
+            playerCount=playerCount.drop(['Date','Time'],axis=1)
+            playerCount=playerCount.rename(columns={'Score':'Count'})
+            print(playerCount.sort_values('Count',ascending=0))
+        #show highest scorer
+        if scoreChoice=='3':
+            print(f"{scoreData['Score'].idxmax()} has the highest score of {scoreData['Score'].max()}")
+        #show lowest scorer
+        if scoreChoice=='4':
+            print(f"{scoreData['Score'].idxmin()} has the lowest score of {scoreData['Score'].min()}")
+        if scoreChoice=='5':
+            print('Which player would you like to plot? Select from the following:' )
+            players=set(scoreData.index.tolist())
+            print(players)
+            player=input('Enter Player Name: ')
+            selectedName=scoreData.loc[scoreData.index==player].sort_values(['Date','Time'])
+            plt.plot(range(len(selectedName.index)),selectedName['Score'])
+            plt.title(f'Scores of {player}')
+            plt.xlabel('Attempt # (Oldest -> Newest)')
+            plt.ylabel('Score')
+            plt.show()
+        
+    
+    #if user selected to play
+    while choice=='play':
+    #begin loop to keep playing as long as player wants
+        while playAgain=='Yes':
+            #welcome and username input
+            print('Welcome to Star Wars Trivia!')
+            user=input('Please Enter your Name: ')
+            print(f'Thank you {user} for playing! You will be asked a series of 10 T/F Questions.')
+            input('Press Enter When Ready')
+            #question counter starts at 1
+            i=1
+            #score counter starts at 0
+            score=0
+            #open file with questions 
+            with open(r'C:\Users\spenc\Documents\Python Scripts\Project\Questions.csv') as file:
+                questions=csv.reader(file)
+                #print each question
+                for question in questions:
+                    print('Question ', i)
+                    print('T/F: ',question[0])
+                    #user answer input
+                    numFingers=input('Number of fingers? 1 for True, 2 for False: ')
+                    answer=fingerCount(numFingers)
+                    #score answer if correct/incorrect
+                    if answer==question[1]:
+                        score+=1
+                        print('Correct!')
+                    else:
+                        print('Incorrect :(')
+                    i+=1
+            #print final score
+            print('Your final score was: ',score)
+            #option to save score
+            save=input('Would you like to save your score? (Y/N) ')
+            if save=='Y':
+                #append score to 'Scores' csv file
+                with open(r'C:\Users\spenc\Documents\Python Scripts\Project\scores.csv','a') as file:
+                    writer=csv.writer(file,lineterminator='\n')
+                    now=datetime.now()
+                    time=now.strftime("%H:%M:%S")
+                    writer.writerow([user,score,date.today(),time])
+            else:
+                print('Your score has not been saved. Thanks for playing!')  
+            #ask to play again: Yes continues, No ends the loop of the game
+            playAgain=input('Would you like to play again (Yes or No)?')  
+        choice=input("Enter 'play','scores',or 'OFF':  ")
+    #turn game off 
+    if choice=='OFF':
+        game='OFF'
+        print('Thanks for playing! Goodbye.')
+
